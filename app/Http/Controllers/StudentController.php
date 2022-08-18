@@ -43,7 +43,11 @@ class StudentController extends Controller
      */
     public function show(Student $student)
     {
-        return Student::findOrFail($student->id);
+        $student = Student::findOrFail($student->id);
+
+        return response()->json([
+            'student' => $student,
+        ],200);
     }
 
     /**

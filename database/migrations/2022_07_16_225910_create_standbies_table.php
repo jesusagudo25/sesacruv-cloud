@@ -14,10 +14,11 @@ return new class extends Migration
     public function up()
     {
         Schema::create('standbies', function (Blueprint $table) {
-            $table->id();
+            $table->unsignedBigInteger('id')->primary();
             $table->string('name');
             $table->string('identity_card');
-            $table->bigInteger('receipt_number')->unique();
+            $table->string('phone_number');
+            $table->date('date_request')->default(now());
             $table->timestamps();
         });
     }

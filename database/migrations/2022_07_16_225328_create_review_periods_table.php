@@ -15,8 +15,8 @@ return new class extends Migration
     {
         Schema::create('review_periods', function (Blueprint $table) {
             $table->id();
-            $table->date('date_start');
-            $table->date('date_end');
+            $table->date('start_date');
+            $table->date('end_date');
             $table->timestamps();
         });
     }

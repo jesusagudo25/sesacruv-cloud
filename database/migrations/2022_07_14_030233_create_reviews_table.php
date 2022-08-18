@@ -15,13 +15,15 @@ return new class extends Migration
     {
         Schema::create('reviews', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('analyst_id')
+            $table->foreignId('user_id')
                 ->constrained()
                 ->onDelete('cascade')
                 ->onUpdate('cascade');
-            $table->foreignId('student_id')
+            $table->unsignedBigInteger('student_id');
+            $table->foreign('student_id')
+                ->references('id')
+                ->on('students')
                 ->unique()
-                ->constrained()
                 ->onDelete('cascade')
                 ->onUpdate('cascade');
             $table->date('date_request')->default(now());

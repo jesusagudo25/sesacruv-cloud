@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Analyst;
+use App\Models\User;
 use App\Models\Student;
 use App\Models\Review;
 use App\Models\ReviewPeriod;
@@ -41,10 +41,11 @@ class ReviewController extends Controller
      */
     public function store(Request $request)
     {
-        //config('constants.options.option_max');
+
         //Primero debes validar el numero de recibo ingresado.
         $request->validate([
-            'receipt_number' => 'required|numeric|min:3|unique:students|unique:standbies',
+            'id' => 'required|numeric|min:3|unique:students|unique:standbies',
+            'phone_number' => 'required|numeric|min:7|unique:students|unique:standbies',
         ]);
 
         $collectionExcel = Excel::toCollection(new StudentsImport, storage_path('app/public/31diario.xls'));
@@ -54,7 +55,8 @@ class ReviewController extends Controller
         ->where('servicio', 'PRE REVISION')
         ->first(); */
 
-        $StudentRequest = collect($collectionExcel[0])->where('recibo', $request->receipt_number)
+
+        $StudentRequest = collect($collectionExcel[0])->where('recibo', $request->id)
         ->first();
  
         if(!$StudentRequest){
@@ -64,87 +66,109 @@ class ReviewController extends Controller
         }
 
         //Determinar la fecha en que se realizara el review.
-        //Se debe considerar en el futuro utilizar timestamp para determinar de una mejor forma las fechas
-
         //Obtener el ultimo periodo registrado.
-        $lastDateReviewPeriod = ReviewPeriod::orderBy('date_start', 'desc')->first();
+        $lastDateReviewPeriod = ReviewPeriod::orderBy('start_date', 'desc')->first();
 
         //Se verifica si el ultimo periodo es del mismo año.
-        if(date('Y', strtotime(isset($lastDateReviewPeriod->date_start) ? $lastDateReviewPeriod->date_start : '2000-01-01')) == date('Y')){
+        if(date('Y', strtotime(isset($lastDateReviewPeriod->start_date) ? $lastDateReviewPeriod->start_date : '2000-01-01')) == date('Y')){
 
             $student = Student::create([
+                'id' => $request->id,
                 'name' => $StudentRequest['nombre_y_apellido'],
                 'identity_card' => $StudentRequest['cedula'],
-                'receipt_number' => $StudentRequest['recibo'],
+                'phone_number' => $request->phone_number,
             ]);
             
             //Se obtiene la fecha mas reciente de un review
             $lastDateReview = Review::orderBy('date_review', 'desc')->first() ? Review::orderBy('date_review', 'desc')->first()->date_review : '2000-01-01';
 
 
-            if(($lastDateReview >= $lastDateReviewPeriod->date_start) && ($lastDateReview <= $lastDateReviewPeriod->date_end)){
+            if(($lastDateReview >= $lastDateReviewPeriod->start_date) && ($lastDateReview <= $lastDateReviewPeriod->end_date)){
 
-                //Se obtienen los analysts que tienen 3 reviews en la ultima fecha de review.
-                $analystUnavailable= Analyst::select('analysts.id')->withCount(['reviews' => function($query) use ($lastDateReview){
+                //Se obtienen los users que tienen 3 reviews en la ultima fecha de review.
+                $userUnavailable= User::select('users.id')->withCount(['reviews' => function($query) use ($lastDateReview){
                     $query->where('date_review', $lastDateReview);
                 }])
-                    ->having('reviews_count', '=', 3)
-                    ->get()->map(function ($analysts) {
-                        return collect($analysts)->only(['id']);
+                    ->having('reviews_count', '=', config('constants.options.option_max'))
+                    ->get()->map(function ($users) {
+                        return collect($users)->only(['id']);
                       });
                 
                 //Se obtiene los analysts que aun no tienen 3 reviews en el día de hoy.
-                $analystAvailable = Analyst::select('analysts.id')->whereNotIn('analysts.id',$analystUnavailable)->get();
-                //Se obtiene los analysts que aun no tienen 3 reviews en el día de hoy.
+                $userAvailable = User::select('users.id')->whereNotIn('users.id',$userUnavailable)->get();
 
-                if($analystAvailable->count() > 0 && date('Y-m-d') < $lastDateReviewPeriod->date_end ){
-                    //Aqui puede suceder que haya cupos para la ultima fecha de revision, pero el día es hoy y ya ha acabado, entonces eso se debe validar
-                    //Tambien si hay cupos para la ultima fecha de revision, pero el día ya ha pasado, entonces eso se debe validar
+                if(date('Y-m-d') >= $lastDateReview && date('Y-m-d') < $lastDateReviewPeriod->end_date ){
+                    
+                    $newDateReview = date('Y-m-d', strtotime(date('Y-m-d'). ' + 1 days'));
+                    if(date('w', strtotime($newDateReview) == 0)){
+                        $newDateReview = date('Y-m-d',strtotime(date('Y-m-d'). ' + 1 days'));
+                    }
+                    else if(date('w', strtotime($newDateReview) == 6)){
+                        $newDateReview = date('Y-m-d',strtotime(date('Y-m-d'). ' + 2 days'));
+                    }
 
-                    $analyst = $analystAvailable->random()->id;
+                    $user = $userAvailable->random()->id;
                     $review = Review::create([
-                        'analyst_id' => $analyst,
+                        'user_id' => $user,
+                        'student_id' => $student->id,
+                        //El dia de la solcitud, sera hoy.
+                        'date_review' => $newDateReview
+                    ]);
+
+                    //Se debe mejorar el tema de que cada students y standby mantenga su llave clave, y que el recibo sea una columna.
+                    return response()->json([
+                        'review' => [ 'id' => $review->id, 'name' => $review->student->name,
+                        'identity_card' => $review->student->identity_card,],
+
+                    ], 201);
+
+                }
+                else if(date('Y-m-d') < $lastDateReview && $userAvailable->count() > 0 ){
+                    $user = $userAvailable->random()->id;
+                    $review = Review::create([
+                        'user_id' => $user,
                         'student_id' => $student->id,
                         //El dia de la solcitud, sera hoy.
                         'date_review' => $lastDateReview
                     ]);
 
                     return response()->json([
-                        'review' => ['id' => $review->id, 'student' => $review->student]
+                        'review' => [ 'id' => $review->id, 'name' => $review->student->name,
+                        'identity_card' => $review->student->identity_card,],
                     ], 201);
-
-                }else{
+                }
+                elseif($userAvailable->count() == 0 && date('Y-m-d') < $lastDateReview){
                     $newDateReview = date('Y-m-d', strtotime($lastDateReview. ' + 1 days'));
-                    if(date('w', strtotime($newDateReview) == 7)){
+                    if(date('w', strtotime($newDateReview) == 0)){
                         $newDateReview = date('Y-m-d',strtotime($lastDateReview. ' + 1 days'));
                     }
                     else if(date('w', strtotime($newDateReview) == 6)){
                         $newDateReview = date('Y-m-d',strtotime($lastDateReview. ' + 2 days'));
                     }
                     
-                    //Se debe tomar en cuenta el dia de hoy, porque si es una solicitud de hace varios dias entonces el analista si la puede recibir, mientras que si es una solicitud que se hace el mismo dia entonces no...
-                    if($newDateReview <= $lastDateReviewPeriod->date_end){
-                        $analyst = Analyst::select('analysts.id')->get()->random()->id;
+                    if($newDateReview <= $lastDateReviewPeriod->end_date){
+                        $user = User::select('users.id')->get()->random()->id;
                         $review = Review::create([
-                            'analyst_id' => $analyst,
+                            'user_id' => $user,
                             'student_id' => $student->id,
                             //El dia de la solcitud, sera hoy.
                             'date_review' => $newDateReview
                         ]);
                         return response()->json([
-                            'review' => ['id' => $review->id, 'student' => $review->student]
+                            'review' => [ 'id' => $review->id, 'name' => $review->student->name,
+                            'identity_card' => $review->student->identity_card,],
                         ], 201);
                     }
                 }
             }
             else{
                 $today = date('Y-m-d');
-                $startDate = $lastDateReviewPeriod->date_start;
-                $endDate = $lastDateReviewPeriod->date_end;
-                $analyst = Analyst::select('analysts.id')->get();
+                $startDate = $lastDateReviewPeriod->start_date;
+                $endDate = $lastDateReviewPeriod->end_date;
+                $user = User::select('users.id')->get();
                 if($today < $startDate){
 
-                    if(date('w', strtotime($startDate)) == 7){
+                    if(date('w', strtotime($startDate)) == 0){
                         $startDate = date('Y-m-d',strtotime($startDate. ' + 1 days'));
                     }
                     else if(date('w', strtotime($startDate)) == 6){
@@ -152,21 +176,22 @@ class ReviewController extends Controller
                     }
     
                     $review = Review::create([
-                        'analyst_id' => $analyst->random()->id,
+                        'user_id' => $user->random()->id,
                         'student_id' => $student->id,
                         //El dia de la solcitud, sera hoy.
                         'date_review' => $startDate
                     ]);
     
                     return response()->json([
-                        'review' => ['id' => $review->id, 'student' => $review->student]
+                        'review' => [ 'id' => $review->id, 'name' => $review->student->name,
+                        'identity_card' => $review->student->identity_card,],
                     ], 201);
                 }
                 else if(($today >= $startDate) && ($today < $endDate)){
                     
                     $today = date('Y-m-d',strtotime($today. ' + 1 days'));
 
-                    if(date('w', strtotime($today)) == 7){
+                    if(date('w', strtotime($today)) == 0){
                         $today = date('Y-m-d',strtotime($today. ' + 1 days'));
                     }
                     else if(date('w', strtotime($today)) == 6){
@@ -174,27 +199,31 @@ class ReviewController extends Controller
                     }
     
                     $review = Review::create([
-                        'analyst_id' => $analyst->random()->id,
+                        'user_id' => $user->random()->id,
                         'student_id' => $student->id,
                         //El dia de la solcitud, sera hoy.
                         'date_review' => $today
                     ]);
     
                     return response()->json([
-                        'review' => ['id' => $review->id, 'student' => $review->student]
+                        'review' => [ 'id' => $review->id, 'name' => $review->student->name,
+                        'identity_card' => $review->student->identity_card,],
                     ], 201);
                 }
             }
         }
 
         $standby = Standby::create([
+            'id' => $request->id,
             'name' => $StudentRequest['nombre_y_apellido'],
             'identity_card' => $StudentRequest['cedula'],
-            'receipt_number' => $StudentRequest['recibo'],
+            'phone_number' => $request->phone_number
         ]);
 
         return response()->json([
             'standby' => $standby->id,
+            'name' => $standby->name,
+            'identity_card' => $standby->identity_card,
         ], 201);
         
 
@@ -208,18 +237,16 @@ class ReviewController extends Controller
      */
     public function show(Review $review)
     {
-        $review = Review::findOrFail($review->id);
+        $review = Review::where('id', $review->id)->with('user','student')->first();
 
         return response()->json([
-            'review' => $review,
-            'student' => $review->student,
-            'analyst' => $review->analyst,
+            'review' => $review
         ], 200);
     }
 
-    public function showAnalyst(Review $review)
+    public function showUser(Review $review)
     {
-        return $review->analyst;
+        return $review->user;
     }
 
     public function showStudent(Review $review)
@@ -232,6 +259,22 @@ class ReviewController extends Controller
         return $review->messages;
     }
 
+    public function checkStandby($student_id)
+    {
+        $review = Review::where('student_id', $student_id)->first();
+
+        if($review){
+            return response()->json([
+                'review' => $review->id
+            ], 200);
+        }
+        else{
+            return response()->json([
+                'review' => null
+            ], 200);
+        }
+    }
+    
     /**
      * Update the specified resource in storage.
      *
@@ -244,7 +287,11 @@ class ReviewController extends Controller
         $request->validate([
             'status' => 'required|boolean'
         ]);
-        $review->update($request->all());
+        
+        $review =  Review::findOrFail($review->id)->update([
+            'status' => $request->status
+        ]);
+
         return response()->json($review, 200);
     }
 
@@ -260,7 +307,14 @@ class ReviewController extends Controller
             'calification' => 'required|integer'
         ]);
         $review->update($request->all());
-        return response()->json($review, 200);
+        return response()->json($review, 200);Review::select(['id', 'date_review AS start'])->where('user_id', 1)->where('date_review', '>=', "2022-08-01")->where('date_review', '<=', "2022-09-10")->with(['students' => function($query){ $query->select(['name AS title']); }])->get();
+    }
+
+    public function schedule($startStr, $endDate, User $user)
+    {
+        $reviews = Review::where('user_id', $user->id)->where('date_review', '>=', $startStr)->where('date_review', '<=', $endDate)->with(['student'])->get();
+
+        return response()->json($reviews, 200);
     }
 
     /**

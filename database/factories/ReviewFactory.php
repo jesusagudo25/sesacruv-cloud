@@ -17,8 +17,8 @@ class ReviewFactory extends Factory
     public function definition()
     {
         return [
-            'analyst_id' => $this->faker->numberBetween(1, 2),
-            'student_id' => $this->faker->unique()->numberBetween(1, 12),
+            'user_id' => $this->faker->numberBetween(1, 2),
+            'student_id' => $this->faker->numberBetween(1, 12),
             'date_request' => today(),
             'date_review' => $this->faker->randomElement(['2022-08-01', '2022-08-02'])
         ];

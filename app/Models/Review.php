@@ -10,19 +10,21 @@ class Review extends Model
     use HasFactory;
 
     protected $fillable = [
-        'analyst_id',
+        'user_id',
+        'status',
         'student_id',
+        'date_request',
         'date_review',
     ];
 
     /**
-     * Get the analyst that owns the review.
+     * Get the user that owns the review.
      * 
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo
      */
-    public function analyst()
+    public function user()
     {
-        return $this->belongsTo(Analyst::class);
+        return $this->belongsTo(User::class);
     }
 
     /**

@@ -41,7 +41,11 @@ class StandbyController extends Controller
      */
     public function show(Standby $standby)
     {
-        //
+        $standby = Standby::findOrFail($standby->id);
+
+        return response()->json([
+            'standby' => $standby,
+        ],200);
     }
 
     /**
@@ -53,7 +57,17 @@ class StandbyController extends Controller
      */
     public function update(Request $request, Standby $standby)
     {
-        //
+        $request->validate([
+            'name' => 'required|string|max:255',
+            'identity_card' => 'required|string|max:255|unique:students|unique:standbies',
+            'receipt_number' => 'required|string|max:255|unique:students|unique:standbies',
+        ]);
+
+        $standby->update($request->all());
+
+        return response()->json([
+            'standby' => $standby,
+        ],200);
     }
 
     /**
@@ -64,6 +78,10 @@ class StandbyController extends Controller
      */
     public function destroy(Standby $standby)
     {
-        //
+        $standby->delete();
+
+        return response()->json([
+            'message' => 'Standby deleted',
+        ],200);
     }
 }

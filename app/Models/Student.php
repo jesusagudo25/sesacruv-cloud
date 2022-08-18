@@ -9,10 +9,13 @@ class Student extends Model
 {
     use HasFactory;
 
+    public $incrementing = false;
+    
     protected $fillable = [
+        'id',
         'name',
         'identity_card',
-        'receipt_number',
+        'phone_number'
     ];
     /**
      * Get the review for the student.
